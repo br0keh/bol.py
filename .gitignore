@@ -3,6 +3,10 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# COMBO AND PROXIES FILES
+combo.txt
+proxies.txt
+
 # C extensions
 *.so
 

